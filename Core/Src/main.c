@@ -28,7 +28,11 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+enum voltage_state_t {
+	UNDERVOLTAGE = -1,
+	OK_VOLTAGE = 0,
+	OVERVOLTAGE = 1
+};
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -63,6 +67,7 @@ static void MX_USART1_UART_Init(void);
 void UART_println(const char* s);
 
 int16_t read_hall_sensor_Gs();
+uint16_t read_system_voltage_mV();
 
 /* USER CODE END PFP */
 
@@ -109,6 +114,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  static const int delay_ms = 500;
   while (1)
   {
     /* USER CODE END WHILE */
@@ -117,7 +123,7 @@ int main(void)
     if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin))
   	  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
-    HAL_Delay(200);
+    HAL_Delay(delay_ms);
 
     if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin))
     	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
@@ -127,7 +133,28 @@ int main(void)
     snprintf(buf, 128, "HALL SENSOR: %d Gs", hall_sensor_reading_Gs);
     UART_println(buf);
 
-    HAL_Delay(200);
+
+
+    uint16_t system_voltage_mV = read_system_voltage_mV();
+    const uint16_t low_threshold_mV = 1800, high_threshold_mV = 2700;
+    enum voltage_state_t voltage_state = system_voltage_mV > high_threshold_mV ? OVERVOLTAGE
+    		: system_voltage_mV < low_threshold_mV ? UNDERVOLTAGE : OK_VOLTAGE;
+
+    snprintf(buf, 128, "SYS VOLTAGE: %u mV => %d", system_voltage_mV, voltage_state);
+    UART_println(buf);
+    if(voltage_state == OVERVOLTAGE) {
+    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_SET);
+    	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+    } else if (voltage_state == UNDERVOLTAGE) {
+    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+    	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_SET);
+    } else {
+    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin|UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+    }
+
+
+
+    HAL_Delay(delay_ms);
   }
   /* USER CODE END 3 */
 }
@@ -201,13 +228,14 @@ static void MX_ADC1_Init(void)
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ScanConvMode = ENABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = ENABLE;
+  hadc1.Init.NbrOfDiscConversion = 2;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.NbrOfConversion = 2;
   hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -219,7 +247,16 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = 2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -335,6 +372,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin|UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
@@ -347,6 +387,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : OVERVOLTAGE_LED_Pin UNDERVOLTAGE_LED_Pin */
+  GPIO_InitStruct.Pin = OVERVOLTAGE_LED_Pin|UNDERVOLTAGE_LED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -363,13 +410,14 @@ void UART_println(const char* s) {
 	memcpy(buf, s, len);
 	memcpy(buf+len, CRLF, 2);
 
-	HAL_UART_Transmit_DMA(&huart2, buf, len+2);
+	HAL_UART_Transmit(&huart2, buf, len+2, 10);
 }
 
 static uint16_t ADC_reading_to_mV(uint16_t a) {
-    static const uint16_t Vref_mV = 3300, max_ADC_reading = 4096;
+    static const uint16_t Vref_mV = 3300, max_ADC_reading = 1 << 12;
     return a * Vref_mV / max_ADC_reading;
 }
+
 static int16_t mV_hall_sensor_reading_to_magnetic_field_Gs(uint16_t a) {
 	//2500mV is the quiescent output voltage, which is the voltage the sensor outputs when no magnetic field is detected (=> 0GS)
 	//1.6 is the output voltage sensitivity, measured in mV/Gs. it correlates the strength of the magnetic field with the voltage output of the sensor
@@ -386,7 +434,26 @@ int16_t read_hall_sensor_Gs() {
 	uint16_t hall_sensor_voltage_mV = ADC_reading_to_mV(hall_sensor_reading);
 	int16_t magnetic_field = mV_hall_sensor_reading_to_magnetic_field_Gs(hall_sensor_voltage_mV);
 	return magnetic_field;
+
 }
+
+uint16_t read_system_voltage_mV() {
+	// Start ADC Conversion
+	HAL_ADC_Start(&hadc1);
+
+	HAL_ADC_PollForConversion(&hadc1, 1);
+	uint16_t ignored_reading = HAL_ADC_GetValue(&hadc1);
+	UNUSED(ignored_reading);
+
+
+	HAL_ADC_PollForConversion(&hadc1, 1);
+	// Read The ADC Conversion Result & Map It To PWM DutyCycle
+	uint16_t ADC_reading = HAL_ADC_GetValue(&hadc1);
+
+	uint16_t sys_voltage_mV = ADC_reading_to_mV(ADC_reading);
+	return sys_voltage_mV;
+}
+
 /* USER CODE END 4 */
 
 /**
