@@ -1,0 +1,12 @@
+../Core/Src/main.c:78:5:main	3
+../Core/Src/main.c:139:6:SystemClock_Config	3
+../Core/Src/main.c:186:13:MX_ADC1_Init	3
+../Core/Src/main.c:238:13:MX_USART1_UART_Init	2
+../Core/Src/main.c:271:13:MX_USART2_UART_Init	2
+../Core/Src/main.c:302:13:MX_DMA_Init	1
+../Core/Src/main.c:323:13:MX_GPIO_Init	1
+../Core/Src/main.c:359:6:UART_println	1
+../Core/Src/main.c:369:17:ADC_reading_to_mV	1
+../Core/Src/main.c:373:16:mV_hall_sensor_reading_to_magnetic_field_Gs	2
+../Core/Src/main.c:379:9:read_hall_sensor_Gs	1
+../Core/Src/main.c:396:6:Error_Handler	1
