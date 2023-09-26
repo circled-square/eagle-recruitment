@@ -28,11 +28,11 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-enum voltage_state_t {
+typedef enum {
 	UNDERVOLTAGE = -1,
 	OK_VOLTAGE = 0,
 	OVERVOLTAGE = 1
-};
+} voltage_state_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -46,6 +46,8 @@ enum voltage_state_t {
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+
+TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -63,11 +65,18 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 void UART_println(const char* s);
 
 int16_t read_hall_sensor_Gs();
 uint16_t read_system_voltage_mV();
+
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim);
+void sensor_timer_callback();
+void sys_voltage_timer_callback();
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
 
 /* USER CODE END PFP */
 
@@ -108,8 +117,9 @@ int main(void)
   MX_USART2_UART_Init();
   MX_ADC1_Init();
   MX_USART1_UART_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_Base_Start_IT(&htim2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -132,27 +142,6 @@ int main(void)
     char buf[128];
     snprintf(buf, 128, "HALL SENSOR: %d Gs", hall_sensor_reading_Gs);
     UART_println(buf);
-
-
-
-    uint16_t system_voltage_mV = read_system_voltage_mV();
-    const uint16_t low_threshold_mV = 1800, high_threshold_mV = 2700;
-    enum voltage_state_t voltage_state = system_voltage_mV > high_threshold_mV ? OVERVOLTAGE
-    		: system_voltage_mV < low_threshold_mV ? UNDERVOLTAGE : OK_VOLTAGE;
-
-    snprintf(buf, 128, "SYS VOLTAGE: %u mV => %d", system_voltage_mV, voltage_state);
-    UART_println(buf);
-    if(voltage_state == OVERVOLTAGE) {
-    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_SET);
-    	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
-    } else if (voltage_state == UNDERVOLTAGE) {
-    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
-    	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_SET);
-    } else {
-    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin|UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
-    }
-
-
 
     HAL_Delay(delay_ms);
   }
@@ -230,12 +219,11 @@ static void MX_ADC1_Init(void)
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = ENABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.DiscontinuousConvMode = ENABLE;
-  hadc1.Init.NbrOfDiscConversion = 2;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 2;
+  hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -252,18 +240,61 @@ static void MX_ADC1_Init(void)
   {
     Error_Handler();
   }
-
-  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
-  */
-  sConfig.Channel = ADC_CHANNEL_4;
-  sConfig.Rank = 2;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+  /*
+   * clock freq is 84Mhz
+   * prescale it by 1k -> prescaled freq is 84kHz
+   * period = 420 cycles -> timer frequency = 84kHz / 4200 = 2kHz/100 = 1/5 kHz = 20Hz
+   * => period = 50ms
+   *
+   * enabling AutoReloadPreload allows the timer to restart after it has been triggered
+  */
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 1000;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4200;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
 
 }
 
@@ -395,12 +426,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
-
 
 // prints a null terminated string to uart2, followed by a CR and LF
 void UART_println(const char* s) {
@@ -454,6 +488,79 @@ uint16_t read_system_voltage_mV() {
 	return sys_voltage_mV;
 }
 
+// timer callback
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
+	if(htim == &htim2) {
+		//executes every 50ms
+		static uint32_t timer_period_counter = 0;
+
+		static const uint32_t timer_period_ms = 50;
+		static const uint32_t sys_voltage_period_ms = 350;
+		static const uint32_t sensor_period_ms = 200;
+
+		static const uint32_t timer_periods_to_wait_before_checking_sys_voltage = sys_voltage_period_ms / timer_period_ms;
+		static const uint32_t timer_periods_to_wait_before_checking_sensor = sensor_period_ms / timer_period_ms;
+
+		if(timer_period_counter % timer_periods_to_wait_before_checking_sensor == 0) {
+			sensor_timer_callback();
+		} if(timer_period_counter % timer_periods_to_wait_before_checking_sys_voltage == 0) {
+			sys_voltage_timer_callback();
+		}
+
+		timer_period_counter++;
+	}
+}
+
+void sensor_timer_callback() {
+    int16_t hall_sensor_reading_Gs = read_hall_sensor_Gs();
+	char buf[128];
+
+	if (hall_sensor_reading_Gs < -1000) {
+    	snprintf(buf, 128, "Hall sensor reading was out of the expected range (%d Gs < -1000Gs)", hall_sensor_reading_Gs);
+    } else if (hall_sensor_reading_Gs > 1000) {
+    	snprintf(buf, 128, "Hall sensor reading was out of the expected range (%d Gs > 1000Gs)", hall_sensor_reading_Gs);
+    } else {
+    	//the value read by the sensor is within the expected range
+		snprintf(buf, 128, "Hall sensor  %d Gs", hall_sensor_reading_Gs);
+    }
+
+	UART_println(buf);
+}
+
+void sys_voltage_timer_callback() {
+	///TODO: remove prints from this function
+
+	UART_println("350ms elapsed -> checking sys voltage");
+
+    uint16_t system_voltage_mV = read_system_voltage_mV();
+    static const uint16_t low_threshold_mV = 1800, high_threshold_mV = 2700;
+    voltage_state_t voltage_state =
+    	system_voltage_mV > high_threshold_mV ? OVERVOLTAGE
+    	: system_voltage_mV < low_threshold_mV ? UNDERVOLTAGE
+    	: OK_VOLTAGE;
+
+    char buf[128];
+    snprintf(buf, 128, "SYS VOLTAGE: %u mV => %d", system_voltage_mV, voltage_state);
+    UART_println(buf);
+    if(voltage_state == OVERVOLTAGE) {
+    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_SET);
+    	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+    } else if (voltage_state == UNDERVOLTAGE) {
+    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+    	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_SET);
+    } else {
+    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin|UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+    }
+
+}
+
+// callback for button push
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	if(GPIO_Pin == B1_Pin) {
+		UART_println("Button pressed");
+	}
+}
+
 /* USER CODE END 4 */
 
 /**
@@ -463,11 +570,9 @@ uint16_t read_system_voltage_mV() {
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
+  UART_println("Error occurred");
   __disable_irq();
-  while (1)
-  {
-  }
+  while(1);
   /* USER CODE END Error_Handler_Debug */
 }
 
@@ -482,8 +587,9 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  char buf[256];
+  snprintf(buf, 256, "Wrong parameters value: file %s on line %d\r\n", file, line);
+  UART_println(buf);
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
