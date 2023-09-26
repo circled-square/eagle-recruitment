@@ -1,20 +1,4 @@
 /* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2023 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -28,16 +12,10 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum {
-	UNDERVOLTAGE = -1,
-	OK_VOLTAGE = 0,
-	OVERVOLTAGE = 1
-} voltage_state_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,7 +33,6 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -70,18 +47,86 @@ static void MX_TIM2_Init(void);
 void UART_println(const char* s);
 
 int16_t read_hall_sensor_Gs();
-uint16_t read_system_voltage_mV();
+uint16_t read_sys_voltage_mV();
 
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim);
-void sensor_timer_callback();
-void sys_voltage_timer_callback();
+void handle_hall_sensor(int16_t hall_sensor_reading_Gs);
+void handle_voltage_sensor(uint16_t system_voltage_mV);
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
-
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+typedef enum {
+	FSM_STATE_INITIAL,
+	FSM_STATE_READ_VOLTAGE,
+	FSM_STATE_READ_SENSOR,
+	FSM_STATE_PAUSED,
+	NUMBER_OF_FSM_STATES
+} fsm_state_t;
+
+bool button_pressed = false;
+bool should_read_sensor = false;
+bool should_read_voltage = false;
+
+fsm_state_t run_state_initial() {
+	if(button_pressed) {
+		button_pressed = false;
+		return FSM_STATE_PAUSED;
+	} else if(should_read_voltage) {
+		should_read_voltage = false;
+		return FSM_STATE_READ_VOLTAGE;
+	} else if(should_read_sensor) {
+		should_read_sensor = false;
+		return FSM_STATE_READ_SENSOR;
+	} else {
+		return FSM_STATE_INITIAL;
+	}
+
+}
+
+fsm_state_t run_state_read_voltage() {
+	handle_voltage_sensor(read_sys_voltage_mV());
+	return FSM_STATE_INITIAL;
+}
+
+fsm_state_t run_state_read_sensor() {
+	handle_hall_sensor(read_hall_sensor_Gs());
+	return FSM_STATE_INITIAL;
+}
+
+fsm_state_t run_state_paused() {
+	UART_println("Board in waiting state - please press the emergency button");
+	HAL_Delay(500);
+
+	if(button_pressed) {
+		button_pressed = false;
+		// reset timer inputs, since we did busy waiting
+		should_read_sensor = should_read_voltage = false;
+		return FSM_STATE_INITIAL;
+	} else {
+		return FSM_STATE_PAUSED;
+	}
+}
+
+fsm_state_t run_state(fsm_state_t s) {
+	switch(s) {
+	case FSM_STATE_INITIAL:
+		return run_state_initial();
+	case FSM_STATE_READ_VOLTAGE:
+		return run_state_read_voltage();
+	case FSM_STATE_READ_SENSOR:
+		return run_state_read_sensor();
+	case FSM_STATE_PAUSED:
+		return run_state_paused();
+	default:
+		char buf[128];
+		snprintf(buf, 128, "invalid fsm state \"%d\" passed to run_state", s);
+		UART_println(buf);
+		while(1);
+	}
+}
 
 /* USER CODE END 0 */
 
@@ -92,7 +137,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -101,14 +145,12 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -124,26 +166,12 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  static const int delay_ms = 500;
-  while (1)
-  {
+  fsm_state_t fsm_state = FSM_STATE_INITIAL;
+  while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin))
-  	  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-
-    HAL_Delay(delay_ms);
-
-    if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin))
-    	HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
-
-    int16_t hall_sensor_reading_Gs = read_hall_sensor_Gs();
-    char buf[128];
-    snprintf(buf, 128, "HALL SENSOR: %d Gs", hall_sensor_reading_Gs);
-    UART_println(buf);
-
-    HAL_Delay(delay_ms);
+	fsm_state = run_state(fsm_state);
   }
   /* USER CODE END 3 */
 }
@@ -218,12 +246,12 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = ENABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.NbrOfConversion = 2;
   hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -235,7 +263,16 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_84CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = 2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -435,7 +472,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
 // prints a null terminated string to uart2, followed by a CR and LF
 void UART_println(const char* s) {
 	static const char* CRLF = "\r\n";
@@ -452,39 +488,31 @@ static uint16_t ADC_reading_to_mV(uint16_t a) {
     return a * Vref_mV / max_ADC_reading;
 }
 
-static int16_t mV_hall_sensor_reading_to_magnetic_field_Gs(uint16_t a) {
+static int16_t hall_sensor_reading_mV_to_magnetic_field_Gs(uint16_t a) {
 	//2500mV is the quiescent output voltage, which is the voltage the sensor outputs when no magnetic field is detected (=> 0GS)
 	//1.6 is the output voltage sensitivity, measured in mV/Gs. it correlates the strength of the magnetic field with the voltage output of the sensor
 	return ((int16_t)a - 2500) * 10 / 16;
 }
 
 int16_t read_hall_sensor_Gs() {
-	// Start ADC Conversion
 	HAL_ADC_Start(&hadc1);
-	// Poll ADC1 Peripheral & TimeOut = 1mSec
-	HAL_ADC_PollForConversion(&hadc1, 1);
-	// Read The ADC Conversion Result & Map It To PWM DutyCycle
 	uint16_t hall_sensor_reading = HAL_ADC_GetValue(&hadc1);
 	uint16_t hall_sensor_voltage_mV = ADC_reading_to_mV(hall_sensor_reading);
-	int16_t magnetic_field = mV_hall_sensor_reading_to_magnetic_field_Gs(hall_sensor_voltage_mV);
+	int16_t magnetic_field = hall_sensor_reading_mV_to_magnetic_field_Gs(hall_sensor_voltage_mV);
 	return magnetic_field;
-
 }
 
-uint16_t read_system_voltage_mV() {
-	// Start ADC Conversion
+uint16_t read_sys_voltage_mV() {
 	HAL_ADC_Start(&hadc1);
-
 	HAL_ADC_PollForConversion(&hadc1, 1);
 	uint16_t ignored_reading = HAL_ADC_GetValue(&hadc1);
 	UNUSED(ignored_reading);
 
-
+	HAL_ADC_Start(&hadc1);
 	HAL_ADC_PollForConversion(&hadc1, 1);
-	// Read The ADC Conversion Result & Map It To PWM DutyCycle
 	uint16_t ADC_reading = HAL_ADC_GetValue(&hadc1);
-
 	uint16_t sys_voltage_mV = ADC_reading_to_mV(ADC_reading);
+
 	return sys_voltage_mV;
 }
 
@@ -501,18 +529,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim) {
 		static const uint32_t timer_periods_to_wait_before_checking_sys_voltage = sys_voltage_period_ms / timer_period_ms;
 		static const uint32_t timer_periods_to_wait_before_checking_sensor = sensor_period_ms / timer_period_ms;
 
-		if(timer_period_counter % timer_periods_to_wait_before_checking_sensor == 0) {
-			sensor_timer_callback();
-		} if(timer_period_counter % timer_periods_to_wait_before_checking_sys_voltage == 0) {
-			sys_voltage_timer_callback();
-		}
+		if(timer_period_counter % timer_periods_to_wait_before_checking_sys_voltage == 0)
+			should_read_voltage = true;
+		if(timer_period_counter % timer_periods_to_wait_before_checking_sensor == 0)
+			should_read_sensor = true;
 
 		timer_period_counter++;
 	}
 }
 
-void sensor_timer_callback() {
-    int16_t hall_sensor_reading_Gs = read_hall_sensor_Gs();
+void handle_hall_sensor(int16_t hall_sensor_reading_Gs) {
 	char buf[128];
 
 	if (hall_sensor_reading_Gs < -1000) {
@@ -527,21 +553,18 @@ void sensor_timer_callback() {
 	UART_println(buf);
 }
 
-void sys_voltage_timer_callback() {
-	///TODO: remove prints from this function
-
-	UART_println("350ms elapsed -> checking sys voltage");
-
-    uint16_t system_voltage_mV = read_system_voltage_mV();
+void handle_voltage_sensor(uint16_t system_voltage_mV) {
     static const uint16_t low_threshold_mV = 1800, high_threshold_mV = 2700;
-    voltage_state_t voltage_state =
+
+    enum {
+    	UNDERVOLTAGE = -1,
+		OK_VOLTAGE = 0,
+		OVERVOLTAGE = 1
+    } voltage_state =
     	system_voltage_mV > high_threshold_mV ? OVERVOLTAGE
     	: system_voltage_mV < low_threshold_mV ? UNDERVOLTAGE
     	: OK_VOLTAGE;
 
-    char buf[128];
-    snprintf(buf, 128, "SYS VOLTAGE: %u mV => %d", system_voltage_mV, voltage_state);
-    UART_println(buf);
     if(voltage_state == OVERVOLTAGE) {
     	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_SET);
     	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
@@ -557,7 +580,8 @@ void sys_voltage_timer_callback() {
 // callback for button push
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if(GPIO_Pin == B1_Pin) {
-		UART_println("Button pressed");
+		//toggle the pause state of the system
+		button_pressed = true;
 	}
 }
 
