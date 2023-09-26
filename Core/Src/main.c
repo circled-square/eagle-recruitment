@@ -87,7 +87,27 @@ fsm_state_t run_state_initial() {
 }
 
 fsm_state_t run_state_read_voltage() {
-	handle_voltage_sensor(read_sys_voltage_mV());
+	static const uint16_t low_threshold_mV = 1800, high_threshold_mV = 2700;
+
+	enum {
+		UNDERVOLTAGE = -1,
+		OK_VOLTAGE = 0,
+		OVERVOLTAGE = 1
+	} voltage_state =
+		system_voltage_mV > high_threshold_mV ? OVERVOLTAGE
+		: system_voltage_mV < low_threshold_mV ? UNDERVOLTAGE
+		: OK_VOLTAGE;
+
+	if(voltage_state == OVERVOLTAGE) {
+		HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+	} else if (voltage_state == UNDERVOLTAGE) {
+		HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_SET);
+	} else {
+		HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin|UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
+	}
+
 	return FSM_STATE_INITIAL;
 }
 
@@ -553,29 +573,6 @@ void handle_hall_sensor(int16_t hall_sensor_reading_Gs) {
 	UART_println(buf);
 }
 
-void handle_voltage_sensor(uint16_t system_voltage_mV) {
-    static const uint16_t low_threshold_mV = 1800, high_threshold_mV = 2700;
-
-    enum {
-    	UNDERVOLTAGE = -1,
-		OK_VOLTAGE = 0,
-		OVERVOLTAGE = 1
-    } voltage_state =
-    	system_voltage_mV > high_threshold_mV ? OVERVOLTAGE
-    	: system_voltage_mV < low_threshold_mV ? UNDERVOLTAGE
-    	: OK_VOLTAGE;
-
-    if(voltage_state == OVERVOLTAGE) {
-    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_SET);
-    	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
-    } else if (voltage_state == UNDERVOLTAGE) {
-    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
-    	HAL_GPIO_WritePin(GPIOB, UNDERVOLTAGE_LED_Pin, GPIO_PIN_SET);
-    } else {
-    	HAL_GPIO_WritePin(GPIOB, OVERVOLTAGE_LED_Pin|UNDERVOLTAGE_LED_Pin, GPIO_PIN_RESET);
-    }
-
-}
 
 // callback for button push
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
