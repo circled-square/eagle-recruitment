@@ -5,7 +5,7 @@
 voltage_fsm_t voltage_fsm = {
 	.state = VOLTAGE_FSM_STATE_OK_VOLTAGE,
 	.inputs = {
-		.sys_voltage_mV = 0.f
+		.sys_voltage_mV = 0
 	}
 };
 
