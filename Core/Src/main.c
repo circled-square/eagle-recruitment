@@ -89,7 +89,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK)
     Error_Handler();
-  if (HAL_ADC_Start_DMA(&hadc1, ADC_DMA_buffer, DMA_BUFFER_SIZE) != HAL_OK)
+  if (HAL_ADC_Start_DMA(&hadc1, ADC_DMA_buffer, ADC_DMA_BUFFER_SIZE) != HAL_OK)
     Error_Handler();
   /* USER CODE END 2 */
 
