@@ -86,12 +86,14 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Start_IT(&htim2);
+  if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK)
+    Error_Handler();
+  if (HAL_ADC_Start_DMA(&hadc1, ADC_DMA_buffer, DMA_BUFFER_SIZE) != HAL_OK)
+    Error_Handler();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-
   while (1) {
     /* USER CODE END WHILE */
 
@@ -201,8 +203,6 @@ static void MX_ADC1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC1_Init 2 */
-  if (HAL_ADC_Start_DMA(&hadc1, dma_buffer, DMA_BUFFER_SIZE) != HAL_OK)
-    Error_Handler();
   /* USER CODE END ADC1_Init 2 */
 
 }
