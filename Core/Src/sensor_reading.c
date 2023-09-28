@@ -14,7 +14,7 @@ static int16_t hall_sensor_reading_mV_to_magnetic_field_Gs(uint16_t a) {
 }
 
 int16_t read_hall_sensor_Gs() {
-	uint16_t hall_sensor_reading = ADC_DMA_buffer[0];//HAL_ADC_GetValue(&hadc1);
+	uint16_t hall_sensor_reading = ADC_DMA_buffer[0];
 	uint16_t hall_sensor_voltage_mV = ADC_reading_to_mV(hall_sensor_reading);
 	int16_t magnetic_field = hall_sensor_reading_mV_to_magnetic_field_Gs(hall_sensor_voltage_mV);
 
