@@ -24,7 +24,8 @@ extern "C" {
 /* USER CODE BEGIN EC */
 extern TIM_HandleTypeDef htim2;
 extern ADC_HandleTypeDef hadc1;
-extern uint32_t ADC_DMA_buffer[2];
+#define ADC_DMA_BUFFER_SIZE 2
+extern uint32_t ADC_DMA_buffer[ADC_DMA_BUFFER_SIZE];
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/

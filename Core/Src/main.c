@@ -35,8 +35,7 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-#define DMA_BUFFER_SIZE 2
-uint32_t ADC_DMA_buffer[2];
+uint32_t ADC_DMA_buffer[ADC_DMA_BUFFER_SIZE];
 // note: the "private" variables in the above block, specifically htim2, hadc1 and ADC_DMA_buffer, are not actually private at all
 // since i exported them in the main.h file under the "exported constants" block
 /* USER CODE END PV */
