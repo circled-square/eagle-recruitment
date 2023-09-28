@@ -24,6 +24,7 @@ extern "C" {
 /* USER CODE BEGIN EC */
 extern TIM_HandleTypeDef htim2;
 extern ADC_HandleTypeDef hadc1;
+extern uint32_t ADC_DMA_buffer[2];
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
@@ -32,6 +33,7 @@ extern ADC_HandleTypeDef hadc1;
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
+
 /* USER CODE BEGIN EFP */
 // prints a null terminated string to uart2, followed by a CR and LF
 void UART_println(const char* s);

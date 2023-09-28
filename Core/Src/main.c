@@ -25,6 +25,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 TIM_HandleTypeDef htim2;
 
@@ -34,8 +35,10 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-//note: the "private" variables in the above block, specifically htim2 and hadc1, are not actually private at all since i exported
-//them in the main.h file under the "exported constants" block
+#define DMA_BUFFER_SIZE 2
+uint32_t ADC_DMA_buffer[2];
+// note: the "private" variables in the above block, specifically htim2, hadc1 and ADC_DMA_buffer, are not actually private at all
+// since i exported them in the main.h file under the "exported constants" block
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -154,13 +157,11 @@ static void MX_ADC1_Init(void)
 {
 
   /* USER CODE BEGIN ADC1_Init 0 */
-
   /* USER CODE END ADC1_Init 0 */
 
   ADC_ChannelConfTypeDef sConfig = {0};
 
   /* USER CODE BEGIN ADC1_Init 1 */
-
   /* USER CODE END ADC1_Init 1 */
 
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
@@ -175,7 +176,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 2;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -201,7 +202,8 @@ static void MX_ADC1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN ADC1_Init 2 */
-
+  if (HAL_ADC_Start_DMA(&hadc1, dma_buffer, DMA_BUFFER_SIZE) != HAL_OK)
+    Error_Handler();
   /* USER CODE END ADC1_Init 2 */
 
 }
@@ -332,6 +334,7 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
   /* DMA1_Stream5_IRQn interrupt configuration */
@@ -340,6 +343,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 
 }
 
