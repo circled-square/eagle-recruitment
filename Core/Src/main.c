@@ -7,6 +7,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "main_fsm.h"
 /* USER CODE END Includes */
@@ -400,16 +401,21 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+int UART_printf(const char* fmt, ...) {
+	va_list args;
+	va_start(args, fmt);
 
-// prints a null terminated string to uart2, followed by a CR and LF
-void UART_println(const char* s) {
+	static char buf[256];
+	int bytes_written = vsnprintf(buf, 255, fmt, args);
+
 	static const char* CRLF = "\r\n";
-	unsigned char buf[256];
-	size_t len = strlen(s);
-	memcpy(buf, s, len);
-	memcpy(buf+len, CRLF, 2);
+	static const int CRLF_len = 2;
+	memcpy(buf+bytes_written, CRLF, CRLF_len);
 
-	HAL_UART_Transmit(&huart2, buf, len+2, 10);
+	HAL_UART_Transmit(&huart2, (unsigned char*)buf, bytes_written+CRLF_len, 10);
+	va_end(args);
+
+	return bytes_written + CRLF_len;
 }
 /* USER CODE END 4 */
 
@@ -420,7 +426,7 @@ void UART_println(const char* s) {
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  UART_println("Error occurred");
+  UART_printf("Error occurred");
   __disable_irq();
   while(1);
   /* USER CODE END Error_Handler_Debug */
@@ -437,9 +443,7 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  char buf[256];
-  snprintf(buf, 256, "Wrong parameters value: file %s on line %d\r\n", file, line);
-  UART_println(buf);
+  UART_printf("Wrong parameters value: file %s on line %d\r\n", file, line);
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

@@ -36,8 +36,8 @@ extern uint32_t ADC_DMA_buffer[ADC_DMA_BUFFER_SIZE];
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-// prints a null terminated string to uart2, followed by a CR and LF
-void UART_println(const char* s);
+// formatted printing to UART
+int UART_printf(const char* fmt, ...);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

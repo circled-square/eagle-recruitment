@@ -43,24 +43,22 @@ fsm_state_t run_state_read_voltage(fsm_inputs_t* inputs) {
 fsm_state_t run_state_read_sensor(fsm_inputs_t* inputs) {
 	int16_t magnetic_field_Gs = read_hall_sensor_Gs();
 
-	char buf[128];
+	uint32_t time_ms = HAL_GetTick();
 
 	if (magnetic_field_Gs < -1000) {
-		snprintf(buf, 128, "Hall sensor reading was out of the expected range (%d Gs < -1000Gs)", magnetic_field_Gs);
+		UART_printf("[%lu] Hall sensor (out of the expected range: %d Gs < -1000Gs)", time_ms, magnetic_field_Gs);
 	} else if (magnetic_field_Gs > 1000) {
-		snprintf(buf, 128, "Hall sensor reading was out of the expected range (%d Gs > 1000Gs)", magnetic_field_Gs);
+		UART_printf("[%lu] Hall sensor (out of the expected range: %d Gs > 1000Gs)", time_ms,  magnetic_field_Gs);
 	} else {
 		//the value read by the sensor is within the expected range
-		snprintf(buf, 128, "Hall sensor  %d Gs", magnetic_field_Gs);
+		UART_printf("[%lu] Hall sensor  %d Gs", time_ms, magnetic_field_Gs);
 	}
-
-	UART_println(buf);
 
 	return FSM_STATE_INITIAL;
 }
 
 fsm_state_t run_state_paused(fsm_inputs_t* inputs) {
-	UART_println("Board in waiting state - please press the emergency button");
+	UART_printf("Board in waiting state - please press the emergency button");
 	HAL_Delay(500);
 
 	if(inputs->button_pressed) {
@@ -85,9 +83,8 @@ fsm_state_t run_state(fsm_state_t s, fsm_inputs_t* inputs) {
 	case FSM_STATE_PAUSED:
 		return run_state_paused(inputs);
 	default:
-		char buf[128];
-		snprintf(buf, 128, "invalid fsm state \"%d\" passed to run_state", s);
-		UART_println(buf);
-		while(1);
+		UART_printf("invalid fsm state \"%d\" passed to run_state", s);
+		Error_Handler();
+		return 0; // never executed, only to silence warnings
 	}
 }
